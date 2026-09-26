@@ -58,7 +58,13 @@ const readyReport = {
     },
     environment: {
       status: "pass",
-      checks: [{ check: "network_configuration", status: "pass", details: "testnet" }],
+      checks: [
+        {
+          check: "network_configuration",
+          status: "pass",
+          details: "testnet",
+        },
+      ],
       passed: 1,
       failed: 0,
       warnings: 0,
@@ -104,19 +110,25 @@ const blockedReport = {
 };
 
 function response(body: unknown, ok = true, status = 200) {
-  return Promise.resolve({ ok, status, json: () => Promise.resolve(body) } as Response);
+  return Promise.resolve({
+    ok,
+    status,
+    json: () => Promise.resolve(body),
+  } as Response);
 }
 
 const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_API_KEY", "test-admin-key");
   vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("TestnetHealthConsole", () => {
@@ -134,8 +146,33 @@ describe("TestnetHealthConsole", () => {
     expect(screen.getByText("abcdef1")).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.test/admin/rc-validation/report",
-      { cache: "no-store" },
+      {
+        cache: "no-store",
+        headers: { "x-api-key": "test-admin-key" },
+      },
     );
+  });
+
+  it("links operators to the relevant detail surfaces", async () => {
+    fetchMock.mockReturnValue(response(readyReport));
+
+    render(<TestnetHealthConsole />);
+    await screen.findByText("Testnet release health");
+
+    expect(
+      screen.getByRole("link", { name: /registry entries/i }).getAttribute("href"),
+    ).toBe("https://api.test/contracts/registry/deployments");
+    expect(
+      screen.getByRole("link", { name: /transactions/i }).getAttribute("href"),
+    ).toBe("/dashboard?panel=activity");
+    expect(
+      screen.getByRole("link", { name: /webhook logs/i }).getAttribute("href"),
+    ).toBe("/webhooks");
+    expect(
+      screen
+        .getByRole("link", { name: /deployment details/i })
+        .getAttribute("href"),
+    ).toBe("/settings/developer");
   });
 
   it("makes critical blockers and remediation actionable", async () => {
@@ -143,9 +180,13 @@ describe("TestnetHealthConsole", () => {
 
     render(<TestnetHealthConsole />);
 
-    expect(await screen.findByText(/critical blockers must be resolved/i)).toBeDefined();
+    expect(
+      await screen.findByText(/critical blockers must be resolved/i),
+    ).toBeDefined();
     expect(screen.getByText("Indexer is 240 ledgers behind")).toBeDefined();
-    expect(screen.getByText(/restart ingestion and verify catch-up/i)).toBeDefined();
+    expect(
+      screen.getByText(/restart ingestion and verify catch-up/i),
+    ).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: /warning \(1\)/i }));
     expect(screen.queryByText("Indexer is 240 ledgers behind")).toBeNull();
@@ -160,10 +201,14 @@ describe("TestnetHealthConsole", () => {
     render(<TestnetHealthConsole />);
     await screen.findByText(/release candidate is ready/i);
 
-    fireEvent.click(screen.getByRole("button", { name: /refresh testnet health/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /refresh testnet health/i }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByText(/critical blockers must be resolved/i)).toBeDefined();
+      expect(
+        screen.getByText(/critical blockers must be resolved/i),
+      ).toBeDefined();
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
